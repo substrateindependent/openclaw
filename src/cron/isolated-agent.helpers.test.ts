@@ -449,6 +449,59 @@ describe("resolveCronPayloadOutcome", () => {
     expect(result.embeddedRunError).toBeUndefined();
   });
 
+  // ENG-24: the native `cron` tool's cross-job self-introspection guard
+  // ("Cron tool is restricted to the current cron job.") is a by-design
+  // policy rejection, not evidence the run's real mission failed. These
+  // fixtures map directly to ENG-24's AC1/AC3.
+
+  it("AC1: restricted-tool rejection followed by a later successful reply classifies ok", () => {
+    const result = resolveCronPayloadOutcome({
+      payloads: [
+        { text: "Cron tool is restricted to the current cron job.", isError: true },
+        { text: "still working..." },
+        { text: "Health check complete. All 6 agents healthy." },
+      ],
+    });
+
+    expect(result.hasFatalErrorPayload).toBe(false);
+    expect(result.hasFatalStructuredErrorPayload).toBe(false);
+    expect(result.embeddedRunError).toBeUndefined();
+    expect(result.summary).toBe("Health check complete. All 6 agents healthy.");
+    expect(result.outputText).toBe("Health check complete. All 6 agents healthy.");
+  });
+
+  it("AC1 (finalAssistantVisibleText variant): restricted-tool rejection as the only payload, real report delivered via finalAssistantVisibleText, classifies ok", () => {
+    const result = resolveCronPayloadOutcome({
+      payloads: [{ text: "Cron tool is restricted to the current cron job.", isError: true }],
+      finalAssistantVisibleText: "Health check complete. All 6 agents healthy.",
+    });
+
+    expect(result.hasFatalErrorPayload).toBe(false);
+    expect(result.hasFatalStructuredErrorPayload).toBe(false);
+  });
+
+  it("AC3 (negative space): restricted-tool rejection with no successful reply anywhere after it still classifies error", () => {
+    const result = resolveCronPayloadOutcome({
+      payloads: [{ text: "Cron tool is restricted to the current cron job.", isError: true }],
+    });
+
+    expect(result.hasFatalErrorPayload).toBe(true);
+    expect(result.hasFatalStructuredErrorPayload).toBe(true);
+    expect(result.embeddedRunError).toBe("Cron tool is restricted to the current cron job.");
+  });
+
+  it("AC3 (negative space, trailing non-success): restricted-tool rejection followed only by another error still classifies error", () => {
+    const result = resolveCronPayloadOutcome({
+      payloads: [
+        { text: "Cron tool is restricted to the current cron job.", isError: true },
+        { text: "⚠️ 🛠️ Exec failed: command not found", isError: true },
+      ],
+    });
+
+    expect(result.hasFatalErrorPayload).toBe(true);
+    expect(result.hasFatalStructuredErrorPayload).toBe(true);
+  });
+
   it("keeps structured error payload reasons ahead of denial-token reasons", () => {
     const result = resolveCronPayloadOutcome({
       payloads: [
