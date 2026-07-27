@@ -9,6 +9,7 @@ import { parseDurationMs } from "../../cli/parse-duration.js";
 import { getRuntimeConfig, type OpenClawConfig } from "../../config/config.js";
 import { resolveCronCreationDelivery } from "../../cron/delivery-context.js";
 import { assertCronDeliveryInputNonBlankFields } from "../../cron/delivery-target-validation.js";
+import { CRON_SELF_REMOVE_SCOPE_ERROR } from "../../cron/execution-error-constants.js";
 import { normalizeCronJobCreate, normalizeCronJobPatch } from "../../cron/normalize.js";
 import { parseCronPacingBounds } from "../../cron/pacing.js";
 import type { CronDelivery, CronPacing } from "../../cron/types.js";
@@ -537,8 +538,6 @@ function assertCronToolSessionRefsMatchScope(
     throw new Error("cron sessionTarget must match the calling agent");
   }
 }
-
-const CRON_SELF_REMOVE_SCOPE_ERROR = "Cron tool is restricted to the current cron job.";
 
 function readCronSelfRemoveOnlyJobId(opts: CronToolOptions | undefined) {
   return opts?.selfRemoveOnlyJobId?.trim() || undefined;
