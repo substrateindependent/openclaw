@@ -5,6 +5,7 @@ import { DEFAULT_HEARTBEAT_ACK_MAX_CHARS } from "../../auto-reply/heartbeat.js";
 import { getReplyPayloadMetadata } from "../../auto-reply/reply-payload.js";
 import type { ReplyPayload } from "../../auto-reply/reply-payload.js";
 import { truncateUtf16Safe } from "../../utils.js";
+import { isCronSelfRemoveScopeRejectionText } from "../execution-error-constants.js";
 import { shouldSkipHeartbeatOnlyDelivery } from "../heartbeat-policy.js";
 
 type DeliveryPayload = Pick<
@@ -216,8 +217,26 @@ function isCronToolWarning(text: string | undefined): boolean {
   return normalizeOptionalString(text)?.startsWith("⚠️ 🛠️ ") === true;
 }
 
-function isNonTerminalToolErrorWarning(payload: object | undefined): boolean {
-  return Boolean(payload && getReplyPayloadMetadata(payload)?.nonTerminalToolErrorWarning);
+/**
+ * The native `cron` tool's cross-job self-introspection guard rejection
+ * (ENG-24). It is a by-design policy rejection, not proof the run's real
+ * mission failed, so it must be treated as non-terminal alongside
+ * `middlewareError` — never as a genuine fatal tool failure on its own.
+ */
+function isCronRestrictedToolRejection(text: string | undefined): boolean {
+  return isCronSelfRemoveScopeRejectionText(text);
+}
+
+function isNonTerminalToolErrorWarning(
+  payload: (object & { text?: string | undefined }) | undefined,
+): boolean {
+  if (!payload) {
+    return false;
+  }
+  if (getReplyPayloadMetadata(payload)?.nonTerminalToolErrorWarning) {
+    return true;
+  }
+  return isCronRestrictedToolRejection(payload.text);
 }
 
 function isSuccessfulCronPayload(payload: DeliveryPayload | undefined): boolean {

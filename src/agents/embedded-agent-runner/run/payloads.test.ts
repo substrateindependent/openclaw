@@ -562,6 +562,50 @@ describe("buildEmbeddedRunPayloads tool-error warnings", () => {
     });
   });
 
+  it("marks the cron restricted-tool self-scope rejection as non-terminal after assistant output (ENG-24)", () => {
+    // The QA-reported gap: at default cron verbosity ("off"), a non-exec-like
+    // tool failure gets reduced by formatToolErrorWarningText to a generic
+    // label ("\u26a0\ufe0f \u23f0 Cron failed") that strips the raw rejection text the cron
+    // outcome resolver's isCronRestrictedToolRejection() matches against. This
+    // must be tagged nonTerminalToolErrorWarning here — while the typed error
+    // text is still available — so the resolver sees it downstream regardless
+    // of the formatted label.
+    const payloads = buildPayloads({
+      assistantTexts: ["Health check complete. All 6 agents healthy."],
+      lastToolError: {
+        toolName: "cron",
+        error: "Cron tool is restricted to the current cron job.",
+      },
+      isCronTrigger: true,
+      verboseLevel: "off",
+    });
+
+    expect(payloads).toHaveLength(2);
+    expect(payloads[0]?.text).toBe("Health check complete. All 6 agents healthy.");
+    expect(payloads[1]).toMatchObject({ isError: true });
+    expect(payloads[1]?.text).toBe("\u26a0\ufe0f \u23f0 Cron failed");
+    expect(getReplyPayloadMetadata(payloads[1] as object)).toMatchObject({
+      nonTerminalToolErrorWarning: true,
+    });
+  });
+
+  it("does not mark other cron tool failures as non-terminal (regression guard)", () => {
+    const payloads = buildPayloads({
+      assistantTexts: ["Health check complete."],
+      lastToolError: {
+        toolName: "cron",
+        error: "Some other genuine cron tool failure.",
+      },
+      isCronTrigger: true,
+      verboseLevel: "off",
+    });
+
+    expect(payloads).toHaveLength(2);
+    expect(getReplyPayloadMetadata(payloads[1] as object)?.nonTerminalToolErrorWarning).not.toBe(
+      true,
+    );
+  });
+
   it("surfaces concise bash tool errors when verbose mode is off", () => {
     const payloads = buildPayloads({
       lastToolError: { toolName: "bash", error: "command failed" },
