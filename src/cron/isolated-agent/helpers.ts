@@ -5,7 +5,7 @@ import { DEFAULT_HEARTBEAT_ACK_MAX_CHARS } from "../../auto-reply/heartbeat.js";
 import { getReplyPayloadMetadata } from "../../auto-reply/reply-payload.js";
 import type { ReplyPayload } from "../../auto-reply/reply-payload.js";
 import { truncateUtf16Safe } from "../../utils.js";
-import { CRON_SELF_REMOVE_SCOPE_ERROR } from "../execution-error-constants.js";
+import { isCronSelfRemoveScopeRejectionText } from "../execution-error-constants.js";
 import { shouldSkipHeartbeatOnlyDelivery } from "../heartbeat-policy.js";
 
 type DeliveryPayload = Pick<
@@ -224,8 +224,7 @@ function isCronToolWarning(text: string | undefined): boolean {
  * `middlewareError` — never as a genuine fatal tool failure on its own.
  */
 function isCronRestrictedToolRejection(text: string | undefined): boolean {
-  const normalized = normalizeOptionalString(text);
-  return normalized !== undefined && normalized.includes(CRON_SELF_REMOVE_SCOPE_ERROR);
+  return isCronSelfRemoveScopeRejectionText(text);
 }
 
 function isNonTerminalToolErrorWarning(

@@ -26,6 +26,7 @@ import {
 } from "../../../auto-reply/tokens.js";
 import { formatToolAggregate } from "../../../auto-reply/tool-meta.js";
 import type { OpenClawConfig } from "../../../config/types.openclaw.js";
+import { isCronSelfRemoveScopeRejectionText } from "../../../cron/execution-error-constants.js";
 import { hasReplyPayloadContent } from "../../../interactive/payload.js";
 import type { AssistantMessage } from "../../../llm/types.js";
 import { isCronSessionKey } from "../../../routing/session-key.js";
@@ -175,8 +176,37 @@ function shouldIncludeToolErrorDetails(params: {
   );
 }
 
-function shouldMarkNonTerminalToolErrorWarning(lastToolError: ToolErrorSummary): boolean {
-  return lastToolError.middlewareError === true;
+/**
+ * True when this tool error is the cron native tool's cross-job
+ * self-introspection guard rejection (ENG-24). By-design policy rejection,
+ * not evidence the run's real mission failed — the cron outcome resolver
+ * (`resolveCronPayloadOutcome`) independently proves recovery via a later
+ * successful payload or `finalAssistantVisibleText` before treating this as
+ * non-fatal, so tagging it here unconditionally cannot turn a genuine
+ * failure into a false success on its own.
+ */
+function isCronRestrictedToolRejectionError(lastToolError: ToolErrorSummary): boolean {
+  return (
+    lastToolError.toolName === "cron" && isCronSelfRemoveScopeRejectionText(lastToolError.error)
+  );
+}
+
+function shouldMarkNonTerminalToolErrorWarning(params: {
+  lastToolError: ToolErrorSummary;
+  hasUserFacingAssistantReply: boolean;
+}): boolean {
+  if (params.hasUserFacingAssistantReply && params.lastToolError.middlewareError === true) {
+    return true;
+  }
+  // Unlike `middlewareError` (which is only meaningful once this same run
+  // already produced user-facing output), the cron restricted-tool rejection
+  // can occur in an isolated-run turn that has no reply of its own — the
+  // real mission report often lands via `finalAssistantVisibleText` from a
+  // later turn in the same cron run. Gating this on `hasUserFacingAssistantReply`
+  // would strand that recovery path (the primary path QA's AC1
+  // finalAssistantVisibleText-only variant covers), so this class is tagged
+  // regardless of same-turn reply presence.
+  return isCronRestrictedToolRejectionError(params.lastToolError);
 }
 
 function formatToolErrorWarningText(params: {
@@ -836,9 +866,10 @@ export function buildEmbeddedRunPayloads(params: {
         replyItems.push({
           text: warningText,
           isError: true,
-          nonTerminalToolErrorWarning:
-            hasUserFacingAssistantReply &&
-            shouldMarkNonTerminalToolErrorWarning(params.lastToolError),
+          nonTerminalToolErrorWarning: shouldMarkNonTerminalToolErrorWarning({
+            lastToolError: params.lastToolError,
+            hasUserFacingAssistantReply,
+          }),
         });
       }
     }
